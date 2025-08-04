@@ -1,4 +1,4 @@
-// pages/api/stripe/set-default-card.ts
+// pages/api/stripe/create-setup-intent.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import Stripe from 'stripe';
 
@@ -9,16 +9,13 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Only POST allowed' });
 
-  const { customerId, paymentMethodId } = req.body;
-
+  const { customerId } = req.body;
   try {
-    await stripe.customers.update(customerId, {
-      invoice_settings: {
-        default_payment_method: paymentMethodId,
-      },
+    const setupIntent = await stripe.setupIntents.create({
+      customer: customerId,
+      usage: 'off_session',
     });
-
-    res.status(200).json({ success: true });
+    res.status(200).json({ clientSecret: setupIntent.client_secret });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
