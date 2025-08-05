@@ -22,6 +22,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           type: 'card',
           card: { token: cardToken },
         });
+
+        console.log('Attaching PaymentMethod to customer');
+        await stripe.paymentMethods.attach(paymentMethod.id, {
+          customer: customerId,
+        });
   
         console.log('Creating SetupIntent with paymentMethod:', paymentMethod.id);
         const setupIntent = await stripe.setupIntents.create({
@@ -47,5 +52,4 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           param: err.param,
         });
     }
-  }
-  
+}
