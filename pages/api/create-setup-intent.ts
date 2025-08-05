@@ -32,8 +32,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const setupIntent = await stripe.setupIntents.create({
           customer: customerId,
           payment_method: paymentMethod.id,
+          payment_method_types: ['card'],
+          payment_method_options: {
+            card: {
+              request_three_d_secure: 'any'
+            }
+          },
           usage: 'off_session',
           confirm: true,
+          automatic_payment_methods: {
+            enabled: true,
+            allow_redirects: 'never'
+          }
         });
   
         console.log('SetupIntent status:', setupIntent.status);
