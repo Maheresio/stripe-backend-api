@@ -29,29 +29,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
   
         console.log('Creating SetupIntent with paymentMethod:', paymentMethod.id);
+        // First, create the SetupIntent without confirming
         const setupIntent = await stripe.setupIntents.create({
           customer: customerId,
           payment_method: paymentMethod.id,
           payment_method_types: ['card'],
-          payment_method_options: {
-            card: {
-              request_three_d_secure: 'any'
-            }
-          },
-          usage: 'off_session',
-          confirm: true,
-          automatic_payment_methods: {
-            enabled: true,
-            allow_redirects: 'never'
-          }
+          usage: 'off_session'
+        });
+
+        // Then confirm it
+        const confirmedIntent = await stripe.setupIntents.confirm(setupIntent.id, {
+          payment_method: paymentMethod.id
         });
   
-        console.log('SetupIntent status:', setupIntent.status);
+        console.log('SetupIntent status:', confirmedIntent.status);
         res.status(200).json({
-          clientSecret: setupIntent.client_secret,
-          paymentMethodId: setupIntent.payment_method,
-          setupIntentId: setupIntent.id,
-          status: setupIntent.status,
+          clientSecret: confirmedIntent.client_secret,
+          paymentMethodId: confirmedIntent.payment_method,
+          setupIntentId: confirmedIntent.id,
+          status: confirmedIntent.status,
         });
     } catch (err: any) {
         console.error('Stripe error:', err);
