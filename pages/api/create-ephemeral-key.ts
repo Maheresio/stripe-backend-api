@@ -20,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Create ephemeral key for the customer
     const ephemeralKey = await stripe.ephemeralKeys.create(
       { customer: customer_id },
-      { apiVersion: "2023-10-16" } // must be passed explicitly
+      { apiVersion: "2025-07-30.basil" } // must be passed explicitly
     );
 
     res.status(200).json({
