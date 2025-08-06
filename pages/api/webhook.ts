@@ -1,69 +1,68 @@
-import type { NextApiRequest, NextApiResponse } from 'next'
-import Stripe from 'stripe'
-import admin from 'firebase-admin'
+import type { NextApiRequest, NextApiResponse } from 'next';
+import Stripe from 'stripe';
+import admin from 'firebase-admin';
+import { buffer } from 'micro';
+
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-07-30.basil',
-})
+    apiVersion: '2025-07-30.basil',
 
-const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET!
+});
+
+const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET!;
+
+export const config = {
+    api: {
+        bodyParser: false, // raw body required for Stripe
+    },
+};
 
 if (!admin.apps.length) {
-  admin.initializeApp()
+    admin.initializeApp();
 }
 
-const firestore = admin.firestore()
+const firestore = admin.firestore();
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const sig = req.headers['stripe-signature']!
-
-  let event: Stripe.Event
-
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret)
-  } catch (err: any) {
-    return res.status(400).send(`Webhook Error: ${err.message}`)
-  }
-
-  if (event.type === 'payment_intent.succeeded') {
-    const intent = event.data.object as Stripe.PaymentIntent
-    const orderId = intent.metadata.orderId
-    const userId = intent.metadata.userId
-
-    if (!userId) {
-      console.error('No userId found in payment intent metadata')
-      return res.status(400).json({ error: 'Missing userId in metadata' })
+    if (req.method !== 'POST') {
+        return res.status(405).send('Method Not Allowed');
     }
 
-    // Store order in user's subcollection
-    await firestore.collection('users').doc(userId).collection('orders').doc(orderId).set({
-      status: 'delivered',
-      amount: intent.amount,
-      currency: intent.currency,
-      created: intent.created,
-      paymentMethod: intent.payment_method,
-      // Include any other relevant order data
-      ...(intent.metadata || {}) // Spread any additional metadata
-    }, { merge: true })
-  }
+    const buf = await buffer(req);
+    const sig = req.headers['stripe-signature']!;
 
-  if (event.type === 'payment_intent.payment_failed') {
-    const intent = event.data.object as Stripe.PaymentIntent
-    const orderId = intent.metadata.orderId
-    const userId = intent.metadata.userId
-
-    if (!userId) {
-      console.error('No userId found in payment intent metadata')
-      return res.status(400).json({ error: 'Missing userId in metadata' })
+    let event: Stripe.Event;
+    try {
+        event = stripe.webhooks.constructEvent(buf, sig, endpointSecret);
+    } catch (err: any) {
+        console.error('Webhook signature error:', err.message);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
-    // Update order status in user's subcollection
-    await firestore.collection('users').doc(userId).collection('orders').doc(orderId).set({
-      status: 'cancelled',
-      lastError: intent.last_payment_error?.message || 'Payment failed',
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true })
-  }
+    try {
+        if (event.type === 'payment_intent.succeeded') {
+            const intent = event.data.object as Stripe.PaymentIntent;
+            const orderId = intent.metadata.orderId;
 
-  res.status(200).json({ received: true })
+            await firestore.collection('orders').doc(orderId).update({
+                status: 'delivered',
+                paymentId: intent.id,
+            });
+        }
+
+        if (event.type === 'payment_intent.payment_failed') {
+            const intent = event.data.object as Stripe.PaymentIntent;
+            const orderId = intent.metadata.orderId;
+
+            await firestore.collection('orders').doc(orderId).update({
+                status: 'cancelled',
+                paymentId: intent.id,
+            });
+        }
+
+        res.status(200).json({ received: true });
+    } catch (err: any) {
+        console.error('Webhook handler error:', err);
+        res.status(500).send('Internal Server Error');
+    }
 }
